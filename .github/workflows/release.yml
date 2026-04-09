@@ -1,19 +1,16 @@
-name: Release
+name: Build Test
 
 on:
   push:
-    tags:
-      - "v*"
-
-permissions:
-  contents: write
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Go
@@ -23,19 +20,13 @@ jobs:
 
       - name: Build binaries
         run: |
-          mkdir dist
+          mkdir -p dist
+          go mod tidy
           GOOS=darwin GOARCH=arm64 go build -o dist/lc-darwin-arm64
           GOOS=darwin GOARCH=amd64 go build -o dist/lc-darwin-amd64
           GOOS=linux GOARCH=amd64 go build -o dist/lc-linux-amd64
           GOOS=linux GOARCH=arm64 go build -o dist/lc-linux-arm64
           GOOS=windows GOARCH=amd64 go build -o dist/lc-windows-amd64.exe
 
-      - name: Generate checksums
-        run: |
-          cd dist
-          shasum -a 256 * > checksums.txt
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
+      - name: List files (debug)
+        run: ls -lah dist
