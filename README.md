@@ -1,5 +1,7 @@
 # leetcode-cli
 
+test
+
 A fast, beautiful LeetCode CLI written in Go. No browser needed — solve problems, run tests, and submit solutions right from your terminal.
 
 ```
