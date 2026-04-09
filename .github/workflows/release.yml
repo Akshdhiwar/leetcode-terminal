@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build binaries
+        run: |
+          mkdir dist
+          GOOS=darwin GOARCH=arm64 go build -o dist/lc-darwin-arm64
+          GOOS=darwin GOARCH=amd64 go build -o dist/lc-darwin-amd64
+          GOOS=linux GOARCH=amd64 go build -o dist/lc-linux-amd64
+          GOOS=linux GOARCH=arm64 go build -o dist/lc-linux-arm64
+          GOOS=windows GOARCH=amd64 go build -o dist/lc-windows-amd64.exe
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          shasum -a 256 * > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
