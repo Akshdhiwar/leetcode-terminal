@@ -1,12 +1,15 @@
-name: Build Test
+name: Auto Release
 
 on:
   push:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,5 +31,17 @@ jobs:
           GOOS=linux GOARCH=arm64 go build -o dist/lc-linux-arm64
           GOOS=windows GOARCH=amd64 go build -o dist/lc-windows-amd64.exe
 
-      - name: List files (debug)
-        run: ls -lah dist
+      - name: Generate checksums
+        run: |
+          cd dist
+          shasum -a 256 * > checksums.txt
+
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest Build"
+          body: "Auto-generated build from main branch"
+          files: dist/*
+          draft: false
+          prerelease: false
