@@ -278,18 +278,6 @@ func renderInlineImage(img ImageRef, client interface {
 	}
 }
 
-func PrintHints(hints []string) {
-	if len(hints) == 0 {
-		Info("No hints available for this question.")
-		return
-	}
-	Header("Hints")
-	for i, h := range hints {
-		stripped, _ := StripHTML(h)
-		fmt.Printf("  %s %s\n\n", color(BrightYellow, fmt.Sprintf("Hint %d:", i+1)), stripped)
-	}
-}
-
 func PrintCodeSnippet(lang string, snippets []api.Snippet) {
 	for _, s := range snippets {
 		if s.LangSlug == lang || s.Lang == lang {
@@ -450,3 +438,4 @@ func PrintStat(label, value, clr string) {
 }
 
 func PrintTestResult(cr interface{ GetState() string }, isTest bool) {}
+

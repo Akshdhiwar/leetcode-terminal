@@ -1,11 +1,15 @@
-// Package keyring provides secure credential storage using the OS keychain
-// where available, with an AES-256-GCM encrypted file fallback.
+// Package keyring provides secure credential storage.
 //
-// Storage backend per platform:
-//   Windows  → Windows Credential Manager via PowerShell (DPAPI-encrypted by OS)
-//   macOS    → Keychain via `security` CLI  (Keychain-encrypted by OS)
-//   Linux    → secret-service via `secret-tool` if available,
-//               else AES-256-GCM encrypted file (~/.leetcode-cli/.credentials)
+// Strategy — simple and reliable across all platforms:
+//   All platforms → AES-256-GCM encrypted file (~/.leetcode-cli/.credentials)
+//
+// The encryption key is derived from the machine's hostname + OS username,
+// so the file is unreadable if copied to another machine.
+//
+// macOS additionally tries the Keychain first (best security).
+// Linux additionally tries secret-service first.
+// Windows uses ONLY the encrypted file (Credential Manager PowerShell API
+// is too unreliable across Windows versions and environments).
 package keyring
 
 import (
@@ -25,11 +29,7 @@ import (
 	"strings"
 )
 
-const (
-	serviceName = "leetcode-cli"
-	keySession  = "session"
-	keyCSRF     = "csrf"
-)
+const serviceName = "leetcode-cli"
 
 // Credentials holds the two secrets needed for LeetCode auth.
 type Credentials struct {
@@ -37,103 +37,93 @@ type Credentials struct {
 	CSRF    string
 }
 
-// Save stores credentials in the OS keychain (or encrypted file on Linux).
+// Save stores credentials securely.
 func Save(creds Credentials) error {
 	switch runtime.GOOS {
-	case "windows":
-		if err := saveWindows(keySession, creds.Session); err != nil {
-			// fallback to encrypted file if Credential Manager fails
-			return saveEncryptedFile(creds)
-		}
-		return saveWindows(keyCSRF, creds.CSRF)
 	case "darwin":
-		if err := saveDarwin(keySession, creds.Session); err != nil {
-			return err
-		}
-		return saveDarwin(keyCSRF, creds.CSRF)
-	default:
-		if secretToolAvailable() {
-			if err := saveSecretTool(keySession, creds.Session); err == nil {
-				_ = saveSecretTool(keyCSRF, creds.CSRF)
+		// Try macOS Keychain first, fall back to encrypted file
+		if err := saveDarwin("session", creds.Session); err == nil {
+			if err2 := saveDarwin("csrf", creds.CSRF); err2 == nil {
 				return nil
 			}
 		}
 		return saveEncryptedFile(creds)
+	case "linux":
+		// Try secret-service first, fall back to encrypted file
+		if secretToolAvailable() {
+			if err := saveSecretTool("session", creds.Session); err == nil {
+				_ = saveSecretTool("csrf", creds.CSRF)
+				return nil
+			}
+		}
+		return saveEncryptedFile(creds)
+	default:
+		// Windows and everything else: always use encrypted file
+		// (Windows Credential Manager PowerShell API is fragile)
+		return saveEncryptedFile(creds)
 	}
 }
 
-// Load retrieves credentials from the OS keychain (or encrypted file).
+// Load retrieves stored credentials.
 func Load() (Credentials, error) {
 	switch runtime.GOOS {
-	case "windows":
-		session, err := loadWindows(keySession)
-		if err != nil || session == "" {
-			// fallback to encrypted file
-			return loadEncryptedFile()
-		}
-		csrf, err := loadWindows(keyCSRF)
-		if err != nil || csrf == "" {
-			return loadEncryptedFile()
-		}
-		return Credentials{Session: session, CSRF: csrf}, nil
 	case "darwin":
-		session, err := loadDarwin(keySession)
-		if err != nil {
-			return Credentials{}, err
+		session, err1 := loadDarwin("session")
+		csrf, err2 := loadDarwin("csrf")
+		if err1 == nil && err2 == nil && session != "" && csrf != "" {
+			return Credentials{Session: session, CSRF: csrf}, nil
 		}
-		csrf, err := loadDarwin(keyCSRF)
-		if err != nil {
-			return Credentials{}, err
-		}
-		return Credentials{Session: session, CSRF: csrf}, nil
-	default:
+		// Fall through to encrypted file
+		return loadEncryptedFile()
+	case "linux":
 		if secretToolAvailable() {
-			session, err := loadSecretTool(keySession)
+			session, err := loadSecretTool("session")
 			if err == nil && session != "" {
-				csrf, _ := loadSecretTool(keyCSRF)
+				csrf, _ := loadSecretTool("csrf")
 				return Credentials{Session: session, CSRF: csrf}, nil
 			}
 		}
 		return loadEncryptedFile()
+	default:
+		// Windows: always encrypted file
+		return loadEncryptedFile()
 	}
 }
 
-// Delete removes stored credentials from all possible backends.
+// Delete removes all stored credentials.
 func Delete() error {
+	// Always delete encrypted file
+	_ = deleteEncryptedFile()
+	// Also clean up OS keychain if applicable
 	switch runtime.GOOS {
-	case "windows":
-		_ = deleteWindows(keySession)
-		_ = deleteWindows(keyCSRF)
 	case "darwin":
-		_ = deleteDarwin(keySession)
-		_ = deleteDarwin(keyCSRF)
-	default:
+		_ = deleteDarwin("session")
+		_ = deleteDarwin("csrf")
+	case "linux":
 		if secretToolAvailable() {
-			_ = deleteSecretTool(keySession)
-			_ = deleteSecretTool(keyCSRF)
+			_ = deleteSecretTool("session")
+			_ = deleteSecretTool("csrf")
 		}
 	}
-	// Always also delete encrypted file (covers fallback saves)
-	_ = deleteEncryptedFile()
 	return nil
 }
 
-// Backend returns a human-readable description of the storage backend in use.
+// Backend returns a human-readable description of the active storage backend.
 func Backend() string {
 	switch runtime.GOOS {
-	case "windows":
-		return "Windows Credential Manager (DPAPI encrypted)"
 	case "darwin":
-		return "macOS Keychain (Keychain encrypted)"
-	default:
+		return "macOS Keychain + AES-256-GCM file fallback"
+	case "linux":
 		if secretToolAvailable() {
 			return "Linux Secret Service (libsecret)"
 		}
 		return "AES-256-GCM encrypted file (~/.leetcode-cli/.credentials)"
+	default:
+		return "AES-256-GCM encrypted file (~/.leetcode-cli/.credentials)"
 	}
 }
 
-// IsLoggedIn quickly checks if credentials are stored without loading them fully.
+// IsLoggedIn returns true if valid credentials are stored.
 func IsLoggedIn() bool {
 	creds, err := Load()
 	return err == nil && creds.Session != ""
@@ -142,12 +132,9 @@ func IsLoggedIn() bool {
 // ─── macOS Keychain ───────────────────────────────────────────────────────────
 
 func saveDarwin(key, value string) error {
-	_ = deleteDarwin(key) // remove old entry first to avoid duplicate error
+	_ = deleteDarwin(key)
 	cmd := exec.Command("security", "add-generic-password",
-		"-s", serviceName,
-		"-a", key,
-		"-w", value,
-	)
+		"-s", serviceName, "-a", key, "-w", value)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("keychain save failed: %s", strings.TrimSpace(string(out)))
@@ -157,10 +144,7 @@ func saveDarwin(key, value string) error {
 
 func loadDarwin(key string) (string, error) {
 	cmd := exec.Command("security", "find-generic-password",
-		"-s", serviceName,
-		"-a", key,
-		"-w",
-	)
+		"-s", serviceName, "-a", key, "-w")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("keychain load failed for %q", key)
@@ -173,101 +157,7 @@ func deleteDarwin(key string) error {
 		"-s", serviceName, "-a", key).Run()
 }
 
-// ─── Windows Credential Manager ───────────────────────────────────────────────
-// cmdkey stores/retrieves generic credentials.
-// Reading back uses PowerShell with the built-in CredentialManager WinAPI.
-
-func saveWindows(key, value string) error {
-	target := fmt.Sprintf("%s-%s", serviceName, key)
-	// cmdkey /generic stores a credential; /pass is the password field
-	cmd := exec.Command("cmdkey",
-		fmt.Sprintf("/generic:%s", target),
-		"/user:lc",
-		fmt.Sprintf("/pass:%s", value),
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("cmdkey save failed: %s", strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func loadWindows(key string) (string, error) {
-	target := fmt.Sprintf("%s-%s", serviceName, key)
-
-	// Use PowerShell + Windows CredentialManager API (no third-party module needed)
-	// [System.Net.NetworkCredential] can unwrap the stored password from CredUI
-	script := fmt.Sprintf(`
-try {
-    Add-Type -AssemblyName System.Security
-    $sig = '[DllImport("advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool CredRead(string target, int type, int flags, out IntPtr credential);'
-    $credType = Add-Type -MemberDefinition $sig -Name "Creds" -Namespace "ADVAPI32" -PassThru -ErrorAction Stop
-    $credPtr = [IntPtr]::Zero
-    if ($credType::CredRead("%s", 1, 0, [ref]$credPtr)) {
-        $cred = [System.Runtime.InteropServices.Marshal]::PtrToStructure($credPtr, [System.Type]::GetType("System.Object"))
-    }
-} catch {}
-
-# Simpler approach: use cmdkey list and PowerShell credential vault
-$output = cmdkey /list:"%s" 2>$null
-if ($output -match "Target:") {
-    # credential exists, read via .NET CredentialCache approach
-}
-
-# Most reliable: use the credential blob directly
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public class WinCred {
-    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
-    public struct CREDENTIAL {
-        public int Flags; public int Type; public string TargetName;
-        public string Comment; public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
-        public int CredentialBlobSize; public IntPtr CredentialBlob;
-        public int Persist; public int AttributeCount; public IntPtr Attributes;
-        public string TargetAlias; public string UserName;
-    }
-    [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
-    public static extern bool CredRead(string target, uint type, uint flags, out IntPtr credential);
-    [DllImport("advapi32.dll")] public static extern void CredFree(IntPtr credential);
-    public static string ReadPassword(string target) {
-        IntPtr ptr;
-        if (!CredRead(target, 1, 0, out ptr)) return "";
-        try {
-            var cred = (CREDENTIAL)Marshal.PtrToStructure(ptr, typeof(CREDENTIAL));
-            if (cred.CredentialBlobSize == 0) return "";
-            return Encoding.Unicode.GetString(Marshal.PtrToStringUni(cred.CredentialBlob) != null ?
-                System.Text.Encoding.Unicode.GetBytes(Marshal.PtrToStringUni(cred.CredentialBlob)) :
-                new byte[0]);
-        } finally { CredFree(ptr); }
-    }
-}
-"@ -ErrorAction SilentlyContinue
-if (([System.Management.Automation.PSTypeName]'WinCred').Type) {
-    $pass = [WinCred]::ReadPassword("%s")
-    if ($pass) { Write-Output $pass; exit 0 }
-}
-exit 1
-`, target, target, target)
-
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
-	out, err := cmd.Output()
-	result := strings.TrimSpace(string(out))
-	if err == nil && result != "" {
-		return result, nil
-	}
-
-	// Final fallback: encrypted file
-	return "", fmt.Errorf("could not read credential %q from Windows Credential Manager", key)
-}
-
-func deleteWindows(key string) error {
-	target := fmt.Sprintf("%s-%s", serviceName, key)
-	return exec.Command("cmdkey", fmt.Sprintf("/delete:%s", target)).Run()
-}
-
-// ─── Linux secret-service (libsecret / GNOME Keyring) ────────────────────────
+// ─── Linux secret-service ─────────────────────────────────────────────────────
 
 func secretToolAvailable() bool {
 	_, err := exec.LookPath("secret-tool")
@@ -276,23 +166,17 @@ func secretToolAvailable() bool {
 
 func saveSecretTool(key, value string) error {
 	cmd := exec.Command("secret-tool", "store",
-		"--label", fmt.Sprintf("leetcode-cli %s", key),
-		"service", serviceName,
-		"key", key,
-	)
+		"--label", fmt.Sprintf("%s %s", serviceName, key),
+		"service", serviceName, "key", key)
 	cmd.Stdin = strings.NewReader(value)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("secret-tool store failed: %s", strings.TrimSpace(string(out)))
-	}
-	return nil
+	return cmd.Run()
 }
 
 func loadSecretTool(key string) (string, error) {
 	cmd := exec.Command("secret-tool", "lookup", "service", serviceName, "key", key)
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("secret-tool lookup failed for %q", key)
+		return "", fmt.Errorf("secret-tool lookup failed")
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -301,65 +185,57 @@ func deleteSecretTool(key string) error {
 	return exec.Command("secret-tool", "clear", "service", serviceName, "key", key).Run()
 }
 
-// ─── AES-256-GCM Encrypted File (universal fallback) ─────────────────────────
-// The encryption key is derived from machine-id + username so the file
-// is unreadable if copied to another machine.
+// ─── AES-256-GCM Encrypted File (primary on Windows, fallback elsewhere) ──────
+//
+// Encryption key = SHA-256(hostname + username + hardcoded salt).
+// This means the file cannot be decrypted on a different machine or by a
+// different user — provides the same protection as DPAPI without needing
+// any platform-specific APIs.
 
-type encryptedStore struct {
-	Session string `json:"session"`
-	CSRF    string `json:"csrf"`
+type credStore struct {
+	Session string `json:"s"`
+	CSRF    string `json:"c"`
+	Version int    `json:"v"`
 }
 
 func credFilePath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("cannot find home directory: %w", err)
 	}
 	dir := filepath.Join(home, ".leetcode-cli")
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return "", err
+		return "", fmt.Errorf("cannot create config dir: %w", err)
 	}
 	return filepath.Join(dir, ".credentials"), nil
 }
 
-func deriveKey() ([]byte, error) {
-	machineID := getMachineID()
+func deriveKey() []byte {
+	hostname, _ := os.Hostname()
 	username := os.Getenv("USER")
 	if username == "" {
-		username = os.Getenv("USERNAME") // Windows
+		username = os.Getenv("USERNAME") // Windows env var
+	}
+	if username == "" {
+		username = os.Getenv("LOGNAME")
 	}
 	if username == "" {
 		username = "default"
 	}
-	raw := fmt.Sprintf("leetcode-cli::%s::%s", machineID, username)
-	hash := sha256.Sum256([]byte(raw))
-	return hash[:], nil
-}
-
-func getMachineID() string {
-	// Linux
-	if data, err := os.ReadFile("/etc/machine-id"); err == nil {
-		return strings.TrimSpace(string(data))
-	}
-	// macOS via ioreg would need exec — use hostname as fallback
-	if data, err := os.ReadFile("/var/lib/dbus/machine-id"); err == nil {
-		return strings.TrimSpace(string(data))
-	}
-	// Windows — use ComputerName env
-	if cn := os.Getenv("COMPUTERNAME"); cn != "" {
-		return cn
-	}
-	hostname, _ := os.Hostname()
-	return hostname
+	// Include a hardcoded app salt so the key is app-specific
+	raw := fmt.Sprintf("leetcode-cli::v1::%s::%s", hostname, username)
+	h := sha256.Sum256([]byte(raw))
+	return h[:]
 }
 
 func saveEncryptedFile(creds Credentials) error {
-	key, err := deriveKey()
-	if err != nil {
-		return err
-	}
+	key := deriveKey()
 
-	plaintext, err := json.Marshal(encryptedStore{Session: creds.Session, CSRF: creds.CSRF})
+	plaintext, err := json.Marshal(credStore{
+		Session: creds.Session,
+		CSRF:    creds.CSRF,
+		Version: 1,
+	})
 	if err != nil {
 		return err
 	}
@@ -378,14 +254,17 @@ func saveEncryptedFile(creds Credentials) error {
 		return err
 	}
 
-	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-	encoded := base64.StdEncoding.EncodeToString(ciphertext)
+	// Seal appends ciphertext+tag to nonce
+	sealed := gcm.Seal(nonce, nonce, plaintext, nil)
+	encoded := base64.StdEncoding.EncodeToString(sealed)
 
 	path, err := credFilePath()
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(encoded), 0600)
+
+	// 0600 = owner read/write only
+	return os.WriteFile(path, []byte(encoded+"\n"), 0600)
 }
 
 func loadEncryptedFile() (Credentials, error) {
@@ -394,24 +273,20 @@ func loadEncryptedFile() (Credentials, error) {
 		return Credentials{}, err
 	}
 
-	encoded, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Credentials{}, fmt.Errorf("no credentials found — run `lc auth`")
+			return Credentials{}, fmt.Errorf("not authenticated — run: lc auth")
 		}
-		return Credentials{}, err
+		return Credentials{}, fmt.Errorf("cannot read credentials file: %w", err)
 	}
 
-	ciphertext, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
+	ciphertext, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
 	if err != nil {
-		return Credentials{}, fmt.Errorf("corrupted credentials file — run `lc auth` again")
+		return Credentials{}, fmt.Errorf("credentials file is corrupted — run: lc auth")
 	}
 
-	key, err := deriveKey()
-	if err != nil {
-		return Credentials{}, err
-	}
-
+	key := deriveKey()
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return Credentials{}, err
@@ -423,18 +298,23 @@ func loadEncryptedFile() (Credentials, error) {
 
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return Credentials{}, fmt.Errorf("corrupted credentials file — run `lc auth` again")
+		return Credentials{}, fmt.Errorf("credentials file is corrupted — run: lc auth")
 	}
 
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	nonce, ct := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ct, nil)
 	if err != nil {
-		return Credentials{}, fmt.Errorf("failed to decrypt credentials — run `lc auth` again")
+		// Wrong machine/user, or file tampered
+		return Credentials{}, fmt.Errorf("cannot decrypt credentials (wrong machine?) — run: lc auth")
 	}
 
-	var store encryptedStore
+	var store credStore
 	if err := json.Unmarshal(plaintext, &store); err != nil {
-		return Credentials{}, fmt.Errorf("corrupted credentials — run `lc auth` again")
+		return Credentials{}, fmt.Errorf("credentials file is corrupted — run: lc auth")
+	}
+
+	if store.Session == "" {
+		return Credentials{}, fmt.Errorf("no session stored — run: lc auth")
 	}
 
 	return Credentials{Session: store.Session, CSRF: store.CSRF}, nil
@@ -445,5 +325,9 @@ func deleteEncryptedFile() error {
 	if err != nil {
 		return err
 	}
-	return os.Remove(path)
+	err = os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }

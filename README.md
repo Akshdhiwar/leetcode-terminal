@@ -21,39 +21,48 @@ A fast, beautiful LeetCode CLI written in Go. No browser needed — solve proble
 - **Submit solutions** and see accepted / wrong answer / runtime error
 - **Hints** on demand
 - **Multi-language** — Go, Python, JavaScript, Java, C++, Rust, and more
+- Direct GitHub release binaries for Linux, macOS, and Windows
 - Zero dependencies — single static binary
 
 ---
 
 ## Installation
 
-### Option 1: Download binary (recommended)
+### Option 1: Download a prebuilt binary (recommended)
 
-Download the binary for your platform from the `dist/` folder and move it to your PATH:
+Grab the latest release assets directly from GitHub:
+
+- Linux amd64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/lc-linux-amd64
+- Linux arm64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/lc-linux-arm64
+- macOS amd64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/lc-darwin-amd64
+- macOS arm64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/lc-darwin-arm64
+- Windows amd64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/lc-windows-amd64.exe
+- Checksums: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/checksums.txt
+
+Example install commands:
 
 ```bash
-# Linux (amd64)
-cp dist/lc-linux-amd64 /usr/local/bin/lc
-chmod +x /usr/local/bin/lc
+# Linux amd64
+curl -L -o lc https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/lc-linux-amd64
+chmod +x lc
+sudo mv lc /usr/local/bin/lc
 
-# macOS (Apple Silicon)
-cp dist/lc-darwin-arm64 /usr/local/bin/lc
-chmod +x /usr/local/bin/lc
+# macOS arm64
+curl -L -o lc https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/lc-darwin-arm64
+chmod +x lc
+sudo mv lc /usr/local/bin/lc
 
-# macOS (Intel)
-cp dist/lc-darwin-amd64 /usr/local/bin/lc
-chmod +x /usr/local/bin/lc
-
-# Windows — add lc-windows-amd64.exe to your PATH as lc.exe
+# Windows amd64
+curl -L -o lc-windows-amd64.exe https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/lc-windows-amd64.exe
+# then add lc-windows-amd64.exe to your PATH or rename to lc.exe
 ```
 
 ### Option 2: Build from source
 
 ```bash
-git clone https://github.com/your/leetcode-cli
-cd leetcode-cli
+git clone https://github.com/Akshdhiwar/leetcode-terminal.git
+cd leetcode-terminal
 go build -o lc .
-mv lc /usr/local/bin/lc
 ```
 
 ---

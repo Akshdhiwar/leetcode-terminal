@@ -37,7 +37,15 @@ func NewApp() *App {
 		return imagerender.Render(data, alt)
 	}
 
-	return &App{cfg: cfg, client: client}
+	app := &App{cfg: cfg, client: client}
+
+	// Wire up the browse → show question function so typing a row number
+	// directly opens the question inline without leaving the browser
+	display.OpenQuestionFn = func(num string) {
+		app.cmdShow([]string{num})
+	}
+
+	return app
 }
 
 func (a *App) Run(args []string) error {
@@ -66,10 +74,12 @@ func (a *App) Run(args []string) error {
 		return a.cmdTest(rest)
 	case "submit":
 		return a.cmdSubmit(rest)
-	case "hints":
-		return a.cmdHints(rest)
 	case "lang":
 		return a.cmdLang(rest)
+	case "profile":
+		return a.cmdProfile(rest)
+	case "browse", "topics", "list":
+		return a.cmdBrowse(rest)
 	case "version":
 		fmt.Printf("leetcode-cli %s\n", display.BrightCyan+"v1.1.0"+display.Reset)
 	default:
@@ -89,42 +99,63 @@ func (a *App) printHelp() {
 	fmt.Printf("    %s [command] [flags]\n\n", display.BrightCyan+"lc"+display.Reset)
 
 	fmt.Printf("  %s\n\n", display.BrightWhite+"COMMANDS"+display.Reset)
-
 	cmds := [][]string{
-		{"auth", "Set your LeetCode session cookie for test/submit"},
-		{"auth logout", "Remove saved credentials from keychain"},
-		{"config", "View and edit CLI settings (path, editor, language)"},
+		{"auth", "Set your LeetCode session cookie"},
+		{"auth logout", "Remove saved credentials"},
+		{"auth status", "Check auth status"},
+		{"config", "View/edit settings"},
 		{"today", "View the Question of the Day"},
-		{"show <number>", "View a question by its number (renders images)"},
-		{"code <number>", "Generate a locally-runnable solution file"},
-		{"test <number> [file]", "Run your code against example test cases"},
-		{"submit <number> [file]", "Submit your solution to LeetCode"},
-		{"hints <number>", "Show hints for a question"},
-		{"lang [language]", "View or set default language (default: cpp)"},
+		{"show <number>", "View a question → enters interactive session"},
+		{"code <number>", "Generate a runnable solution file"},
+		{"test <number> [file]", "Test against example cases"},
+		{"submit <number> [file]", "Submit to LeetCode"},
+		{"lang [language]", "View/set language (default: cpp)"},
+		{"profile [username]", "View profile, stats & contest rating"},
+		{"browse", "Browse problems by topic (shows solved count)"},
 	}
-
 	for _, c := range cmds {
-		fmt.Printf("    %-30s %s\n",
+		fmt.Printf("    %-32s %s\n",
 			display.BrightCyan+c[0]+display.Reset,
 			display.Reset+display.Dim+c[1]+display.Reset,
 		)
 	}
 
+	fmt.Printf("\n  %s\n", display.BrightWhite+"SESSION MODE"+display.Reset)
+	fmt.Printf("  %s\n\n", display.Dim+"After `lc show <number>` you enter a session — no more retyping the number:"+display.Reset)
+	sessionCmds := [][]string{
+		{"code [lang]", "Generate solution file"},
+		{"test [file]", "Run against example cases"},
+		{"submit [file]", "Submit to LeetCode"},
+		{"show", "Re-display the question"},
+		{"url", "Print problem URL"},
+		{"q / quit", "Exit session"},
+	}
+	for _, c := range sessionCmds {
+		fmt.Printf("    %-22s %s\n",
+			display.BrightCyan+c[0]+display.Reset,
+			display.Dim+c[1]+display.Reset,
+		)
+	}
+
 	fmt.Printf("\n  %s\n\n", display.BrightWhite+"EXAMPLES"+display.Reset)
-	examples := []string{
-		"lc today                       # View today's challenge",
-		"lc show 1                      # View Two Sum (with images)",
-		"lc code 1                      # Generate runnable solution file",
-		"lc test 1                      # Test with example cases",
-		"lc test 1 ./my_solution.cpp    # Test with a specific file",
-		"lc submit 1                    # Submit solution",
-		"lc hints 1                     # Show hints",
-		"lc lang cpp                    # Switch to C++",
-		"lc config path ~/leetcode      # Set solutions folder",
-		"lc config editor code          # Auto-open files in VS Code",
+	examples := [][]string{
+		{"lc show 1", "# View Two Sum → enter session"},
+		{"  → code", "# Generate file (no number needed)"},
+		{"  → test", "# Test it"},
+		{"  → submit", "# Submit"},
+		{"  → q", "# Exit"},
+		{"", ""},
+		{"lc today", "# Today's challenge"},
+		{"lc browse", "# Browse by topic (shows your solved count)"},
+		{"lc lang python3", "# Switch language"},
+		{"lc profile", "# Your stats"},
 	}
 	for _, e := range examples {
-		fmt.Printf("    %s\n", display.Dim+e+display.Reset)
+		if e[0] == "" {
+			fmt.Println()
+		} else {
+			fmt.Printf("    %-24s %s\n", display.BrightCyan+e[0]+display.Reset, display.Dim+e[1]+display.Reset)
+		}
 	}
 
 	fmt.Printf("\n  %s\n", display.BrightWhite+"IMAGE RENDERING"+display.Reset)
@@ -346,9 +377,6 @@ func (a *App) cmdToday(args []string) error {
 	display.Header(fmt.Sprintf("Question of the Day — %s", date))
 	display.PrintQuestion(q, a.client)
 
-	if hasFlag(args, "--hints") {
-		display.PrintHints(q.Hints)
-	}
 	if hasFlag(args, "--code") {
 		display.PrintCodeSnippet(a.cfg.Language, q.CodeSnippets)
 	}
@@ -382,25 +410,113 @@ func (a *App) cmdShow(args []string) error {
 		return nil
 	}
 
+	switch q.Status {
+	case "ac":
+		display.Success("You have solved this problem ✔")
+	case "notac":
+		display.Warn("You have attempted this problem but not solved it yet")
+	default:
+		if a.cfg.Session != "" {
+			display.Info("You have not attempted this problem yet")
+		}
+	}
+
 	display.PrintQuestion(q, a.client)
 
-	if hasFlag(args, "--hints") {
-		display.PrintHints(q.Hints)
-	}
 	if hasFlag(args, "--code") || hasFlag(args, "-c") {
 		display.PrintCodeSnippet(a.cfg.Language, q.CodeSnippets)
 	}
 
-	solutionsDir, _ := a.cfg.SolutionsDirResolved()
-	fmt.Printf("  %s %s\n", display.Dim+"URL:"+display.Reset,
-		display.BrightCyan+fmt.Sprintf("https://leetcode.com/problems/%s/", q.TitleSlug)+display.Reset)
 	fmt.Printf("  %s %s\n\n",
-		display.Dim+"Solutions dir:"+display.Reset,
-		display.Dim+solutionsDir+display.Reset)
-	fmt.Printf("  %s\n\n",
-		display.BrightYellow+fmt.Sprintf("Tip: `lc code %s` to generate a runnable solution file", num)+display.Reset)
+		display.Dim+"URL:"+display.Reset,
+		display.BrightCyan+fmt.Sprintf("https://leetcode.com/problems/%s/", q.TitleSlug)+display.Reset)
 
+	// Drop into interactive session for this question
+	a.questionSession(q)
 	return nil
+}
+
+// questionSession is an interactive REPL for a loaded question.
+func (a *App) questionSession(q *api.Question) {
+	reader := bufio.NewReader(os.Stdin)
+	num := q.QuestionFrontendId
+
+	fmt.Printf("  %s\n",
+		display.BrightYellow+"┌─ Session: "+q.QuestionFrontendId+". "+q.Title+" ──────────────────────────────────────────┐"+display.Reset)
+	fmt.Printf("  %s\n",
+		display.BrightYellow+"│  code · test · submit · show · q=quit                                        │"+display.Reset)
+	fmt.Printf("  %s\n\n",
+		display.BrightYellow+"└───────────────────────────────────────────────────────────────────────────────┘"+display.Reset)
+
+	for {
+		fmt.Printf("  %s %s %s ",
+			display.Dim+"["+num+"]"+display.Reset,
+			display.BrightCyan+"lc"+display.Reset,
+			display.BrightWhite+"→"+display.Reset,
+		)
+		line, _ := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		cmd := parts[0]
+		rest := parts[1:]
+
+		switch cmd {
+		case "q", "quit", "exit":
+			fmt.Println()
+			return
+
+		case "show", "view":
+			display.PrintQuestion(q, a.client)
+
+		case "code":
+			lang := a.cfg.Language
+			if len(rest) > 0 {
+				lang = rest[0]
+			}
+			a.generateCode(q, lang)
+
+		case "test":
+			a.testQuestion(q, rest)
+
+		case "submit":
+			a.submitQuestion(q, rest)
+
+		case "lang":
+			if len(rest) > 0 {
+				a.cfg.Language = rest[0]
+				config.Save(a.cfg)
+				display.Success(fmt.Sprintf("Language set to: %s", display.BrightCyan+rest[0]+display.Reset))
+			} else {
+				display.Info(fmt.Sprintf("Current language: %s", display.BrightCyan+a.cfg.Language+display.Reset))
+			}
+
+		case "url":
+			fmt.Printf("\n  %s\n\n", display.BrightCyan+fmt.Sprintf("https://leetcode.com/problems/%s/", q.TitleSlug)+display.Reset)
+
+		case "help", "?":
+			fmt.Println()
+			cmds := [][]string{
+				{"show", "Re-display the question"},
+				{"code [lang]", "Generate solution file"},
+				{"test [file]", "Run against example cases"},
+				{"submit [file]", "Submit to LeetCode"},
+				{"lang [l]", "View/set language"},
+				{"url", "Print problem URL"},
+				{"q / quit", "Exit session"},
+			}
+			for _, c := range cmds {
+				fmt.Printf("    %-20s %s\n", display.BrightCyan+c[0]+display.Reset, display.Dim+c[1]+display.Reset)
+			}
+			fmt.Println()
+
+		default:
+			display.Warn(fmt.Sprintf("Unknown command: %s  (type 'help' for list)", cmd))
+		}
+	}
 }
 
 // ─── Code ─────────────────────────────────────────────────────────────────────
@@ -410,24 +526,24 @@ func (a *App) cmdCode(args []string) error {
 		display.Fail("Usage: lc code <question-number> [language]")
 		return nil
 	}
-
 	num := args[0]
 	display.Spinner(fmt.Sprintf("Fetching starter code for #%s", num))
-
 	q, err := a.client.GetQuestionByNumber(num)
 	if err != nil {
 		display.Fail(fmt.Sprintf("Failed to fetch question: %v", err))
 		return nil
 	}
-
 	lang := a.cfg.Language
 	for _, arg := range args[1:] {
 		if !strings.HasPrefix(arg, "-") {
 			lang = arg
 		}
 	}
+	a.generateCode(q, lang)
+	return nil
+}
 
-	// Find snippet
+func (a *App) generateCode(q *api.Question, lang string) {
 	var snippet *api.Snippet
 	for i, s := range q.CodeSnippets {
 		if s.LangSlug == lang || s.Lang == lang {
@@ -435,29 +551,22 @@ func (a *App) cmdCode(args []string) error {
 			break
 		}
 	}
-
 	if snippet == nil {
 		display.Warn(fmt.Sprintf("No starter code for language: %s", lang))
 		fmt.Println("  Available languages:")
 		for _, s := range q.CodeSnippets {
 			fmt.Printf("    • %s (%s)\n", s.Lang, s.LangSlug)
 		}
-		return nil
+		return
 	}
-
-	// Generate locally-runnable wrapped file
 	wrappedCode := codegen.Wrap(q, *snippet, q.ExampleTestcases)
-
 	path, err := storage.SaveSolution(a.cfg, q.QuestionFrontendId, q.TitleSlug, lang, wrappedCode)
 	if err != nil {
 		display.Fail(fmt.Sprintf("Failed to save solution file: %v", err))
-		return nil
+		return
 	}
-
 	display.Success("Solution file created:")
 	fmt.Printf("\n    %s\n\n", display.BrightCyan+path+display.Reset)
-
-	// Show how to run locally
 	fmt.Println(display.BrightWhite + "  How to run locally:" + display.Reset)
 	switch lang {
 	case "cpp":
@@ -473,37 +582,11 @@ func (a *App) cmdCode(args []string) error {
 	case "javascript":
 		fmt.Printf("    %s\n", display.Dim+"node "+path+display.Reset)
 	}
-
 	fmt.Println()
-	fmt.Println(display.Dim + "  The file has:" + display.Reset)
-	fmt.Println(display.Dim + "    • Your solution stub (between SUBMIT START/END markers)" + display.Reset)
-	fmt.Println(display.Dim + "    • A local test harness with example inputs" + display.Reset)
-	fmt.Println(display.Dim + "    • The harness is auto-stripped when you run `lc submit`" + display.Reset)
-	fmt.Println()
-	fmt.Printf("  %s\n\n", display.BrightYellow+fmt.Sprintf("When ready: `lc test %s`  then  `lc submit %s`", num, num)+display.Reset)
-
 	if a.cfg.Editor != "" {
 		display.Info(fmt.Sprintf("Opening in %s...", a.cfg.Editor))
 		fmt.Printf("  %s\n\n", display.Dim+"$ "+a.cfg.Editor+" "+path+display.Reset)
 	}
-
-	return nil
-}
-
-// ─── Hints ────────────────────────────────────────────────────────────────────
-
-func (a *App) cmdHints(args []string) error {
-	if len(args) == 0 {
-		display.Fail("Usage: lc hints <question-number>")
-		return nil
-	}
-	q, err := a.client.GetQuestionByNumber(args[0])
-	if err != nil {
-		display.Fail(fmt.Sprintf("Failed: %v", err))
-		return nil
-	}
-	display.PrintHints(q.Hints)
-	return nil
 }
 
 // ─── Lang ─────────────────────────────────────────────────────────────────────
@@ -546,7 +629,6 @@ func (a *App) cmdTest(args []string) error {
 		display.Fail("Usage: lc test <question-number> [solution-file] [--input \"...\"]")
 		return nil
 	}
-
 	num := args[0]
 	display.Spinner(fmt.Sprintf("Fetching question #%s", num))
 	q, err := a.client.GetQuestionByNumber(num)
@@ -554,13 +636,16 @@ func (a *App) cmdTest(args []string) error {
 		display.Fail(fmt.Sprintf("Failed to fetch question: %v", err))
 		return nil
 	}
+	a.testQuestion(q, args[1:])
+	return nil
+}
 
-	code, filePath, err := a.resolveCode(args[1:], q, a.cfg.Language)
+func (a *App) testQuestion(q *api.Question, args []string) {
+	code, filePath, err := a.resolveCode(args, q, a.cfg.Language)
 	if err != nil {
 		display.Fail(err.Error())
-		return nil
+		return
 	}
-
 	testInput := q.ExampleTestcases
 	if testInput == "" {
 		testInput = q.SampleTestCase
@@ -568,7 +653,6 @@ func (a *App) cmdTest(args []string) error {
 	if customInput := flagValue(args, "--input"); customInput != "" {
 		testInput = customInput
 	}
-
 	display.Header(fmt.Sprintf("Testing #%s — %s", q.QuestionFrontendId, q.Title))
 	fmt.Printf("  %-16s %s\n", display.Dim+"File:"+display.Reset, display.BrightCyan+filePath+display.Reset)
 	fmt.Printf("  %-16s %s\n", display.Dim+"Language:"+display.Reset, display.BrightCyan+a.cfg.Language+display.Reset)
@@ -576,23 +660,19 @@ func (a *App) cmdTest(args []string) error {
 		display.Dim+"Test Input:"+display.Reset,
 		indentLines(testInput, "    ", display.Yellow, display.Reset),
 	)
-
 	display.Spinner("Submitting test run to LeetCode judge")
 	checkID, err := a.client.TestCode(q.TitleSlug, a.cfg.Language, code, testInput)
 	if err != nil {
 		display.Fail(fmt.Sprintf("Test failed: %v", err))
-		return nil
+		return
 	}
-
 	display.Spinner("Waiting for judge result")
 	cr, err := a.client.PollResult(checkID, 30*time.Second)
 	if err != nil {
 		display.Fail(fmt.Sprintf("Polling failed: %v", err))
-		return nil
+		return
 	}
-
 	printTestResult(cr)
-	return nil
 }
 
 // ─── Submit ───────────────────────────────────────────────────────────────────
@@ -602,7 +682,6 @@ func (a *App) cmdSubmit(args []string) error {
 		display.Fail("Usage: lc submit <question-number> [solution-file]")
 		return nil
 	}
-
 	num := args[0]
 	display.Spinner(fmt.Sprintf("Fetching question #%s", num))
 	q, err := a.client.GetQuestionByNumber(num)
@@ -610,52 +689,47 @@ func (a *App) cmdSubmit(args []string) error {
 		display.Fail(fmt.Sprintf("Failed to fetch question: %v", err))
 		return nil
 	}
+	a.submitQuestion(q, args[1:])
+	return nil
+}
 
-	code, filePath, err := a.resolveCode(args[1:], q, a.cfg.Language)
+func (a *App) submitQuestion(q *api.Question, args []string) {
+	code, filePath, err := a.resolveCode(args, q, a.cfg.Language)
 	if err != nil {
 		display.Fail(err.Error())
-		return nil
+		return
 	}
-
-	// Show what will be submitted (stripped version)
 	stripped := api.StripSubmitCode(code)
-
 	display.Header(fmt.Sprintf("Submitting #%s — %s", q.QuestionFrontendId, q.Title))
 	fmt.Printf("  %-16s %s\n", display.Dim+"File:"+display.Reset, display.BrightCyan+filePath+display.Reset)
 	fmt.Printf("  %-16s %s\n", display.Dim+"Language:"+display.Reset, display.BrightCyan+a.cfg.Language+display.Reset)
-
 	if strings.Contains(code, "// --- SUBMIT START ---") {
 		lineCount := len(strings.Split(stripped, "\n"))
 		fmt.Printf("  %-16s %s\n", display.Dim+"Submitting:"+display.Reset,
 			display.Dim+fmt.Sprintf("%d lines (harness stripped automatically)", lineCount)+display.Reset)
 	}
-
 	fmt.Println()
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("  Submit to LeetCode? %s ", display.BrightYellow+"[y/N]"+display.Reset)
 	ans, _ := reader.ReadString('\n')
 	if strings.ToLower(strings.TrimSpace(ans)) != "y" {
 		display.Info("Submission cancelled.")
-		return nil
+		return
 	}
-
 	fmt.Println()
 	display.Spinner("Submitting solution to LeetCode")
 	checkID, err := a.client.SubmitCode(q.TitleSlug, a.cfg.Language, code)
 	if err != nil {
 		display.Fail(fmt.Sprintf("Submit failed: %v", err))
-		return nil
+		return
 	}
-
 	display.Spinner("Waiting for judge result")
 	cr, err := a.client.PollResult(checkID, 60*time.Second)
 	if err != nil {
 		display.Fail(fmt.Sprintf("Polling failed: %v", err))
-		return nil
+		return
 	}
-
 	printSubmitResult(cr)
-	return nil
 }
 
 // ─── Result Printers ──────────────────────────────────────────────────────────
@@ -856,4 +930,47 @@ func indentLines(s, indent, colorOn, colorOff string) string {
 		result = append(result, indent+colorOn+l+colorOff)
 	}
 	return strings.Join(result, "\n")
+}
+
+// ─── Profile ──────────────────────────────────────────────────────────────────
+
+func (a *App) cmdProfile(args []string) error {
+	username := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		username = args[0]
+	}
+
+	if username == "" {
+		display.Spinner("Detecting logged-in username")
+		u, err := a.client.GetCurrentUsername()
+		if err != nil || u == "" {
+			display.Fail("Could not detect username. Please run: lc profile <username>")
+			fmt.Printf("\n  %s\n", display.Dim+"Example: lc profile lee215"+display.Reset)
+			return nil
+		}
+		username = u
+	}
+
+	display.Spinner(fmt.Sprintf("Loading profile for @%s", username))
+	profile, err := a.client.GetUserProfile(username)
+	if err != nil {
+		display.Fail(fmt.Sprintf("Failed to load profile: %v", err))
+		return nil
+	}
+
+	display.Spinner("Loading submission calendar")
+	cal, err := a.client.GetSubmissionCalendar(username)
+	if err != nil {
+		cal = nil // heatmap is optional — don't fail
+	}
+
+	display.PrintProfile(profile, cal)
+	return nil
+}
+
+// ─── Browse ───────────────────────────────────────────────────────────────────
+
+func (a *App) cmdBrowse(args []string) error {
+	display.BrowseProblems(a.client)
+	return nil
 }

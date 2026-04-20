@@ -1,0 +1,25 @@
+# Ignore all dist build output directories
+**/dist/
+
+# Local build outputs
+lc
+*.exe
+*.dll
+*.so
+*.dylib
+*.out
+*.test
+
+# Temporary and log files
+*.log
+*.tmp
+*.swp
+*~
+
+# IDE/editor directories
+.vscode/
+.idea/
+
+# macOS / Windows metadata
+.DS_Store
+Thumbs.db
