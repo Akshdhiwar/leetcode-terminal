@@ -23,18 +23,18 @@ jobs:
 
       - name: Build binaries
         run: |
-          mkdir -p dist
+          mkdir -p dist/linux-amd64 dist/linux-arm64 dist/darwin-amd64 dist/darwin-arm64 dist/windows-amd64
           go mod tidy
-          GOOS=darwin GOARCH=arm64 go build -o dist/lc-darwin-arm64
-          GOOS=darwin GOARCH=amd64 go build -o dist/lc-darwin-amd64
-          GOOS=linux GOARCH=amd64 go build -o dist/lc-linux-amd64
-          GOOS=linux GOARCH=arm64 go build -o dist/lc-linux-arm64
-          GOOS=windows GOARCH=amd64 go build -o dist/lc-windows-amd64.exe
+          GOOS=darwin GOARCH=arm64 go build -o dist/darwin-arm64/lc
+          GOOS=darwin GOARCH=amd64 go build -o dist/darwin-amd64/lc
+          GOOS=linux GOARCH=amd64 go build -o dist/linux-amd64/lc
+          GOOS=linux GOARCH=arm64 go build -o dist/linux-arm64/lc
+          GOOS=windows GOARCH=amd64 go build -o dist/windows-amd64/lc.exe
 
       - name: Generate checksums
         run: |
           cd dist
-          shasum -a 256 * > checksums.txt
+          find . -type f -not -name 'checksums.txt' | sort | xargs shasum -a 256 > checksums.txt
 
       - name: Create or Update Release
         uses: softprops/action-gh-release@v2
@@ -42,6 +42,6 @@ jobs:
           tag_name: latest
           name: "Latest Build"
           body: "Auto-generated build from main branch"
-          files: dist/*
+          files: dist/**/*
           draft: false
           prerelease: false
