@@ -1,61 +1,44 @@
-name: Auto Release
+name: Release
 
 on:
   push:
     branches:
       - main
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
 permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.22"
 
       - name: Build binaries
         run: |
-          mkdir -p dist/linux-amd64 dist/linux-arm64 dist/darwin-amd64 dist/darwin-arm64 dist/windows-amd64
-          go mod tidy
-          GOOS=darwin GOARCH=arm64 go build -o dist/darwin-arm64/lc
-          GOOS=darwin GOARCH=amd64 go build -o dist/darwin-amd64/lc
+          mkdir -p dist
+
           GOOS=linux GOARCH=amd64 go build -o dist/linux-amd64/lc
-          GOOS=linux GOARCH=arm64 go build -o dist/linux-arm64/lc
           GOOS=windows GOARCH=amd64 go build -o dist/windows-amd64/lc.exe
+          GOOS=darwin GOARCH=amd64 go build -o dist/darwin-amd64/lc
 
       - name: Generate checksums
         run: |
           cd dist
-          find . -type f -not -name 'checksums.txt' | sort | xargs shasum -a 256 > checksums.txt
+          find . -type f -exec sha256sum {} \; > checksums.txt
 
-      - name: Create or Update Latest Release
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: latest
-          name: "Latest Build"
-          body: "Auto-generated build from main branch"
-          files: dist/checksums.txt dist/*/*
-          draft: false
-          prerelease: false
-
-      - name: Create or Update Tag Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: "Release ${{ github.ref_name }}"
-          body: "Auto-generated release for ${{ github.ref_name }}"
-          files: dist/checksums.txt dist/*/*
-          draft: false
-          prerelease: false
+          files: |
+            dist/checksums.txt
+            dist/**/*
