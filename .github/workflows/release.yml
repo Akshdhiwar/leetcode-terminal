@@ -2,8 +2,6 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*.*.*"
 
@@ -14,6 +12,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,22 +26,27 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Build binaries
+      - name: Build binary
         run: |
           mkdir -p dist
 
-          GOOS=linux GOARCH=amd64 go build -o dist/linux-amd64/lc
-          GOOS=windows GOARCH=amd64 go build -o dist/windows-amd64/lc.exe
-          GOOS=darwin GOARCH=amd64 go build -o dist/darwin-amd64/lc
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            EXT=".exe"
+          fi
+
+          OUTPUT="dist/lc-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}"
+
+          echo "Building $OUTPUT"
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o $OUTPUT
 
       - name: Generate checksums
         run: |
           cd dist
-          find . -type f -exec sha256sum {} \; > checksums.txt
+          sha256sum * > checksums.txt
 
-      - name: Create Release
+      - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/checksums.txt
-            dist/**/*
+            dist/*
