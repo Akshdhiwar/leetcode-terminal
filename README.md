@@ -30,68 +30,127 @@ A fast, beautiful LeetCode CLI written in Go. No browser needed — solve proble
 
 ### Option 1: Download a prebuilt binary (recommended)
 
-Grab the latest release assets directly from GitHub:
+Download the binary for your operating system from the [latest release](https://github.com/Akshdhiwar/leetcode-terminal/releases). Follow the instructions for your OS below.
 
-- Linux amd64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/linux-amd64/lc
-- Linux arm64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/linux-arm64/lc
-- macOS amd64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/darwin-amd64/lc
-- macOS arm64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/darwin-arm64/lc
-- Windows amd64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/windows-amd64/lc.exe
-- Checksums: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/checksums.txt
+#### **Windows**
 
-> `latest` is an automatic build from `main`. For stable releases, use tagged versions like `v1.2.0`.
->
-> To publish a versioned release manually:
-> 1. Update your code and commit.
-> 2. Tag it: `git tag v1.2.0`
-> 3. Push the tag: `git push origin v1.2.0`
->
-Install and name the binary `lc` so you can run commands from any terminal:
+**For 64-bit systems (most common):**
+1. Download: [`lc-windows-amd64.exe`](https://github.com/Akshdhiwar/leetcode-terminal/releases/download/v1.0.4/lc-windows-amd64.exe)
+2. Rename the file to `lc.exe`
+3. Choose a folder for your binary:
+   - **Option A (Recommended):** Create a folder like `C:\Users\YourUsername\bin` and move `lc.exe` there
+   - **Option B:** Use an existing folder already in your PATH (like `C:\Users\YourUsername\AppData\Local\Programs`)
+4. Add the folder to your PATH:
+   - Press `Win + X` → **System** → **About** → **Advanced system settings**
+   - Click **Environment Variables** → Under **User variables**, click **New**
+   - Variable name: `Path`
+   - Variable value: `C:\Users\YourUsername\bin` (or your chosen folder)
+   - Click **OK** three times to save
+5. Restart your terminal (or run `refreshenv` in PowerShell)
+6. Verify installation:
+   ```cmd
+   lc --help
+   ```
+7. Now you can use commands from any terminal:
+   ```cmd
+   lc show 1
+   lc test 1
+   lc submit 1
+   ```
 
-```bash
-# Linux amd64
-curl -L -o lc https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/linux-amd64/lc
-chmod +x lc
-sudo mv lc /usr/local/bin/lc
+**For 32-bit ARM systems:**
+1. Download: [`lc-windows-arm64.exe`](https://github.com/Akshdhiwar/leetcode-terminal/releases/download/v1.0.4/lc-windows-arm64.exe)
+2. Follow steps 2-7 above
 
-# macOS arm64
-curl -L -o lc https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/darwin-arm64/lc
-chmod +x lc
-sudo mv lc /usr/local/bin/lc
+---
 
-# Windows amd64
-curl -L -o lc.exe https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/windows-amd64/lc.exe
-# Move lc.exe to a folder in your PATH, for example C:\Windows\System32 or a custom bin folder.
-```
+#### **macOS**
 
-If the binary is not already in your PATH, add its folder to your environment variables:
+**For Apple Silicon (M1, M2, M3, etc.):**
+1. Download: [`lc-darwin-arm64`](https://github.com/Akshdhiwar/leetcode-terminal/releases/download/v1.0.4/lc-darwin-arm64)
+2. Open Terminal and run:
+   ```bash
+   # Rename and move to PATH
+   mv ~/Downloads/lc-darwin-arm64 lc
+   chmod +x lc
+   sudo mv lc /usr/local/bin/lc
+   ```
+3. Verify installation:
+   ```bash
+   lc --help
+   ```
+4. Now you can use commands from any terminal:
+   ```bash
+   lc show 1
+   lc test 1
+   lc submit 1
+   ```
 
-- Linux/macOS:
-  ```bash
-  export PATH="$HOME/bin:$PATH"
-  ```
-  Add that line to `~/.bashrc`, `~/.zshrc`, or your shell profile.
+**For Intel-based Mac:**
+1. Download: [`lc-darwin-amd64`](https://github.com/Akshdhiwar/leetcode-terminal/releases/download/v1.0.4/lc-darwin-amd64)
+2. Open Terminal and run:
+   ```bash
+   # Rename and move to PATH
+   mv ~/Downloads/lc-darwin-amd64 lc
+   chmod +x lc
+   sudo mv lc /usr/local/bin/lc
+   ```
+3. Verify installation:
+   ```bash
+   lc --help
+   ```
+4. Now you can use commands from any terminal:
+   ```bash
+   lc show 1
+   lc test 1
+   lc submit 1
+   ```
 
-- Windows:
-  1. Open System Properties → Advanced → Environment Variables.
-  2. Edit `Path` under your user variables.
-  3. Add the folder containing `lc.exe`.
-  4. Restart your terminal.
+---
 
-Verify installation:
+#### **Linux**
 
-```bash
-lc --help
-which lc
-```
+**For 64-bit systems (most common):**
+1. Download: [`lc-linux-amd64`](https://github.com/Akshdhiwar/leetcode-terminal/releases/download/v1.0.4/lc-linux-amd64)
+2. Open Terminal and run:
+   ```bash
+   # Rename and move to PATH
+   mv ~/Downloads/lc-linux-amd64 lc
+   chmod +x lc
+   sudo mv lc /usr/local/bin/lc
+   ```
+3. Verify installation:
+   ```bash
+   lc --help
+   ```
+4. Now you can use commands from any terminal:
+   ```bash
+   lc show 1
+   lc test 1
+   lc submit 1
+   ```
 
-After install, run commands like:
+**For ARM-based systems (Raspberry Pi, ARM servers, etc.):**
+1. Download: [`lc-linux-arm64`](https://github.com/Akshdhiwar/leetcode-terminal/releases/download/v1.0.4/lc-linux-arm64)
+2. Open Terminal and run:
+   ```bash
+   # Rename and move to PATH
+   mv ~/Downloads/lc-linux-arm64 lc
+   chmod +x lc
+   sudo mv lc /usr/local/bin/lc
+   ```
+3. Verify installation:
+   ```bash
+   lc --help
+   ```
+4. Now you can use commands from any terminal:
+   ```bash
+   lc show 1
+   lc test 1
+   lc submit 1
+   ```
 
-```bash
-lc show 33
-lc test 33
-lc submit 33
-```
+---
 
 ### Option 2: Build from source
 
