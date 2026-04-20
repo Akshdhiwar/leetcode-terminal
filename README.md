@@ -39,6 +39,13 @@ Grab the latest release assets directly from GitHub:
 - Windows amd64: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/windows-amd64/lc.exe
 - Checksums: https://github.com/Akshdhiwar/leetcode-terminal/releases/download/latest/checksums.txt
 
+> `latest` is an automatic build from `main`. For stable releases, use tagged versions like `v1.2.0`.
+>
+> To publish a versioned release manually:
+> 1. Update your code and commit.
+> 2. Tag it: `git tag v1.2.0`
+> 3. Push the tag: `git push origin v1.2.0`
+>
 Install and name the binary `lc` so you can run commands from any terminal:
 
 ```bash

@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -36,12 +38,24 @@ jobs:
           cd dist
           find . -type f -not -name 'checksums.txt' | sort | xargs shasum -a 256 > checksums.txt
 
-      - name: Create or Update Release
+      - name: Create or Update Latest Release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: "Latest Build"
           body: "Auto-generated build from main branch"
-          files: dist/**/*
+          files: dist/checksums.txt dist/*/*
+          draft: false
+          prerelease: false
+
+      - name: Create or Update Tag Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Release ${{ github.ref_name }}"
+          body: "Auto-generated release for ${{ github.ref_name }}"
+          files: dist/checksums.txt dist/*/*
           draft: false
           prerelease: false
